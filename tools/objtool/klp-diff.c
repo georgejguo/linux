@@ -337,6 +337,14 @@ static bool is_special_section_aux(struct section *sec)
 	return false;
 }
 
+static bool is_local_temp_label(struct symbol *sym)
+{
+	if (sym->type != STT_NOTYPE)
+		return false;
+
+	return strstarts(sym->name, ".L");
+}
+
 /*
  * These symbols should never be correlated, so their local patched versions
  * are used instead of linking to the originals.
@@ -352,6 +360,7 @@ static bool dont_correlate(struct symbol *sym)
 	       is_string_sec(sym->sec) ||
 	       is_special_section(sym->sec) ||
 	       is_special_section_aux(sym->sec) ||
+	       is_local_temp_label(sym)||
 	       strstarts(sym->name, "__initcall__");
 }
 
