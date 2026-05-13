@@ -168,7 +168,7 @@ static void __init smbios_parse(void)
 #ifdef CONFIG_ARCH_WRITECOMBINE
 bool wc_enabled = true;
 #else
-bool wc_enabled = false;
+bool wc_enabled;
 #endif
 
 EXPORT_SYMBOL(wc_enabled);
