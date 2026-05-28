@@ -40,6 +40,10 @@ struct kimage_arch {
 	unsigned long cmdline_ptr;
 	void *cmdline_buf;	/* file mode: cmdline segment buffer, freed at cleanup */
 	unsigned long systable_ptr;
+#ifdef CONFIG_KEXEC_HANDOVER
+	void *fdt;		/* virtual address of KHO FDT segment buffer */
+	unsigned long fdt_mem;	/* physical address of KHO FDT segment */
+#endif
 };
 
 struct kimage;
