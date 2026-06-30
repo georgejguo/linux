@@ -38,6 +38,7 @@ static inline void crash_setup_regs(struct pt_regs *newregs,
 struct kimage_arch {
 	unsigned long efi_boot;
 	unsigned long cmdline_ptr;
+	void *cmdline_buf;	/* file mode: cmdline segment buffer, freed at cleanup */
 	unsigned long systable_ptr;
 };
 

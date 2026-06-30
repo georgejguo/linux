@@ -21,16 +21,6 @@
 #include <asm/cacheflush.h>
 #include <asm/page.h>
 
-/*
- * The kexec'd kernel reads its command line from this pointer early in
- * boot, so the command line must live in memory the new kernel will not
- * reuse.  Keep it at a fixed address in the first 2MB, which both the
- * current and the kexec'd kernel always keep reserved (see
- * memblock_reserve(PHYS_OFFSET, 0x200000) in arch/loongarch/kernel/mem.c).
- * 0x108000 does not overlap QEMU's machine FDT at 0x100000.
- */
-#define KEXEC_CMDLINE_ADDR	TO_CACHE(0x108000UL)
-
 static unsigned long reboot_code_buffer;
 static cpumask_t cpus_in_crash = CPU_MASK_NONE;
 
@@ -49,29 +39,26 @@ int machine_kexec_prepare(struct kimage *kimage)
 {
 	int i;
 	char *bootloader = "kexec";
-	void *cmdline_ptr = (void *)KEXEC_CMDLINE_ADDR;
 
 	kimage->arch.efi_boot = fw_arg0;
 	kimage->arch.systable_ptr = fw_arg2;
 
-	if (kimage->file_mode == 1) {
-		/*
-		 * kimage->cmdline_buf will be released in kexec_file_load, so copy
-		 * to the KEXEC_CMDLINE_ADDR safe area.
-		 */
-		memcpy((void *)KEXEC_CMDLINE_ADDR, (void *)kimage->arch.cmdline_ptr,
-					strlen((char *)kimage->arch.cmdline_ptr) + 1);
-		kimage->arch.cmdline_ptr = (unsigned long)KEXEC_CMDLINE_ADDR;
-	} else {
+	/*
+	 * In file mode load_other_segments() already placed the command line in
+	 * its own segment and stored its address in arch.cmdline_ptr.  For the
+	 * legacy kexec_load() path the command line is supplied in a segment
+	 * whose buffer starts with the bootloader name; point the second kernel
+	 * at that segment's destination instead of copying it to a fixed
+	 * address that can overlap the firmware FDT.
+	 */
+	if (kimage->file_mode != 1) {
 		char head[8];
 
-		/* Find the command line */
 		for (i = 0; i < kimage->nr_segments; i++) {
 			if (copy_from_user(head, kimage->segment[i].buf, strlen(bootloader)))
 				continue;
 			if (!strncmp(bootloader, head, strlen(bootloader))) {
-				if (!copy_from_user(cmdline_ptr, kimage->segment[i].buf, COMMAND_LINE_SIZE))
-					kimage->arch.cmdline_ptr = (unsigned long)cmdline_ptr;
+				kimage->arch.cmdline_ptr = TO_CACHE(kimage->segment[i].mem);
 				break;
 			}
 		}

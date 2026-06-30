@@ -32,6 +32,9 @@ int arch_kimage_file_post_load_cleanup(struct kimage *image)
 	image->elf_headers = NULL;
 	image->elf_headers_sz = 0;
 
+	kfree(image->arch.cmdline_buf);
+	image->arch.cmdline_buf = NULL;
+
 	return kexec_image_post_load_cleanup_default(image);
 }
 
@@ -152,6 +155,8 @@ int load_other_segments(struct kimage *image,
 	modified_cmdline = kzalloc(COMMAND_LINE_SIZE, GFP_KERNEL);
 	if (!modified_cmdline)
 		return -EINVAL;
+	/* Owned by the image from here on; freed in post_load_cleanup(). */
+	image->arch.cmdline_buf = modified_cmdline;
 
 	cmdline_add_loader(&cmdline_tmplen, modified_cmdline);
 	/* Ensure it's null terminated */
@@ -227,13 +232,35 @@ int load_other_segments(struct kimage *image,
 	}
 
 	memcpy(modified_cmdline + cmdline_tmplen, cmdline, cmdline_len);
-	cmdline = modified_cmdline;
-	image->arch.cmdline_ptr = (unsigned long)cmdline;
+
+	/*
+	 * Load the command line into its own segment instead of copying it to
+	 * a fixed address in the reserved low memory, which can overlap the
+	 * firmware-provided FDT (e.g. QEMU places a 1MB machine FDT at
+	 * 0x100000).  The second kernel receives this segment's address in
+	 * register a1; see machine_kexec().
+	 */
+	kbuf.buffer = modified_cmdline;
+	kbuf.bufsz = COMMAND_LINE_SIZE;
+	kbuf.mem = KEXEC_BUF_MEM_UNKNOWN;
+	kbuf.memsz = COMMAND_LINE_SIZE;
+	kbuf.buf_align = PAGE_SIZE;
+	kbuf.buf_max = ULONG_MAX;
+	kbuf.top_down = true;
+
+	ret = kexec_add_buffer(&kbuf);
+	if (ret < 0)
+		goto out_err;
+
+	image->arch.cmdline_ptr = TO_CACHE(kbuf.mem);
+
+	kexec_dprintk("Loaded command line at 0x%lx memsz=0x%x\n",
+		      kbuf.mem, COMMAND_LINE_SIZE);
 
 	return 0;
 
 out_err:
 	image->nr_segments = orig_segments;
-	kfree(modified_cmdline);
+	/* modified_cmdline (image->arch.cmdline_buf) is freed in cleanup. */
 	return ret;
 }
